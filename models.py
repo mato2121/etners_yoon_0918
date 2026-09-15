@@ -69,8 +69,10 @@ class Client(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
+    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    owner = db.relationship("User", foreign_keys=[owner_id])
     entries = db.relationship(
         "KnowledgeEntry", backref="client", cascade="all, delete-orphan", lazy="dynamic"
     )
@@ -83,11 +85,22 @@ class Client(db.Model):
     rule_changes = db.relationship(
         "RuleChangeLog", backref="client", cascade="all, delete-orphan", lazy="dynamic"
     )
+    access_grants = db.relationship(
+        "ClientAccess", backref="client", cascade="all, delete-orphan", lazy="dynamic"
+    )
 
     @property
     def last_activity_at(self):
         latest = self.entries.order_by(KnowledgeEntry.created_at.desc()).first()
         return latest.created_at if latest else self.created_at
+
+    def is_accessible_by(self, user):
+        """관리자·소유자·권한 부여받은 담당자만 열람 가능. 소유자가 없는(레거시) 고객사는 전체 공개로 취급."""
+        if user.is_admin:
+            return True
+        if self.owner_id is None or self.owner_id == user.id:
+            return True
+        return self.access_grants.filter_by(user_id=user.id).first() is not None
 
 
 class KnowledgeEntry(db.Model):
@@ -180,3 +193,49 @@ class HandoverManual(db.Model):
             return json.loads(self.content_json)
         except (ValueError, TypeError):
             return []
+
+
+class ClientAccess(db.Model):
+    """고객사 소유자 외에 추가로 열람을 허용받은 담당자."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("client.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    granted_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User")
+
+    __table_args__ = (db.UniqueConstraint("client_id", "user_id", name="uq_client_access_user"),)
+
+
+AUDIT_ACTION_LABELS = {
+    "login": "로그인",
+    "logout": "로그아웃",
+    "register": "회원가입",
+    "create_client": "고객사 등록",
+    "add_entry": "지식 항목 추가",
+    "create_handover": "인수인계 매뉴얼 생성",
+    "export_handover": "매뉴얼 Word 다운로드",
+    "update_settings": "AI 키 설정 변경",
+    "grant_access": "접근 권한 부여",
+    "revoke_access": "접근 권한 회수",
+    "search_query": "자연어 질의 검색",
+}
+
+
+class AuditLog(db.Model):
+    """누가 언제 무엇을 했는지 남기는 감사 로그."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    actor_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    action = db.Column(db.String(40), nullable=False)
+    client_id = db.Column(db.Integer, db.ForeignKey("client.id"), nullable=True)
+    detail = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    actor = db.relationship("User")
+    client = db.relationship("Client")
+
+    @property
+    def action_label(self):
+        return AUDIT_ACTION_LABELS.get(self.action, self.action)

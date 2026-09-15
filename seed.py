@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from models import (
     Client,
+    ClientAccess,
     ExceptionRule,
     HandoverManual,
     KnowledgeEntry,
@@ -32,7 +33,7 @@ def seed_if_empty():
     now = datetime.utcnow()
 
     # ---- 고객사 1: (주)한빛전자 ----
-    hanbit = Client(name="(주)한빛전자", created_at=now - timedelta(days=120))
+    hanbit = Client(name="(주)한빛전자", owner_id=demo_user.id, created_at=now - timedelta(days=120))
     db.session.add(hanbit)
     db.session.flush()
 
@@ -144,7 +145,7 @@ def seed_if_empty():
     )
 
     # ---- 고객사 2: 그린푸드 물류센터 ----
-    green = Client(name="그린푸드 물류센터", created_at=now - timedelta(days=45))
+    green = Client(name="그린푸드 물류센터", owner_id=demo_user.id, created_at=now - timedelta(days=45))
     db.session.add(green)
     db.session.flush()
 
@@ -181,6 +182,15 @@ def seed_if_empty():
                 day_of_month=20,
                 updated_at=now - timedelta(days=8),
             ),
+        ]
+    )
+
+    # newstaff는 관리자가 아니므로, 데모에서 바로 두 고객사를 볼 수 있도록 접근 권한을 부여해둔다
+    # (실제로는 /admin/access 화면에서 관리자가 직접 부여/회수하게 된다).
+    db.session.add_all(
+        [
+            ClientAccess(client_id=hanbit.id, user_id=newstaff_user.id),
+            ClientAccess(client_id=green.id, user_id=newstaff_user.id),
         ]
     )
 

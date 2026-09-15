@@ -10,8 +10,11 @@
   <div class="topbar">
     <div class="brand"><a href="{{ url_for('dashboard') }}" style="color:#fff;text-decoration:none;">📋 업무 연속성 <span>매뉴얼 생성기</span></a></div>
     <div class="right">
+      <a href="{{ url_for('search') }}" style="color:#fff;">🔎 질의 검색</a>
       {% if current_user.is_admin %}
       <a href="{{ url_for('settings') }}" style="color:#fff;">⚙️ 설정</a>
+      <a href="{{ url_for('admin_access') }}" style="color:#fff;">🔐 접근 권한</a>
+      <a href="{{ url_for('audit_log') }}" style="color:#fff;">🧾 감사 로그</a>
       <a href="{{ url_for('admin_dashboard') }}" style="color:#fff;">🛡️ 관리자 화면</a>
       {% endif %}
       <span>👤 {{ current_user.username }}</span>

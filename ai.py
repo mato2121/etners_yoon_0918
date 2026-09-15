@@ -273,3 +273,52 @@ def generate_handover_manual(client_row, handover_context=None):
         return None
 
     return parsed["sections"]
+
+
+# ---------------------------------------------------------------------------
+# 자연어 질의 검색 (RAG 방식 — 임베딩 없이 키워드로 1차 추출 후 AI가 답변)
+# ---------------------------------------------------------------------------
+def find_relevant_entries(query, entries, top_k=8):
+    """아주 단순한 키워드 매칭으로 관련성 높은 기록을 추린다 (벡터 검색 없는 1차 버전)."""
+    keywords = [w for w in re.split(r"[\s,.?!]+", query) if len(w) > 1]
+    if not keywords:
+        return list(entries)[:top_k]
+
+    def score(entry):
+        return sum(entry.content.count(k) for k in keywords)
+
+    scored = [(score(e), e) for e in entries]
+    scored = [pair for pair in scored if pair[0] > 0]
+    if not scored:
+        return list(entries)[:top_k]
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [e for _, e in scored[:top_k]]
+
+
+def answer_question(query, scope_label, relevant_entries):
+    """관련 기록을 근거로 담당자의 질문에 답한다. AI 비활성 시 관련 기록만 나열."""
+    if not relevant_entries:
+        return "관련된 기록을 찾지 못했습니다. 다른 표현으로 다시 질문해보세요."
+
+    entries_text = "\n".join(
+        f"- [{e.client.name} · {e.created_at.strftime('%Y-%m-%d')} · "
+        f"{ENTRY_TYPE_LABELS.get(e.entry_type, e.entry_type)}] {e.content}"
+        for e in relevant_entries
+    )
+
+    client = get_ai_client()
+    if not client:
+        return (
+            "⚠️ AI 키가 없어 답변을 생성할 수 없습니다. 관련 기록만 나열합니다.\n\n"
+            + entries_text
+        )
+
+    system = (
+        "너는 급여/복리후생 담당자의 질문에, 주어진 사내 기록만 근거로 답하는 보조 도구다. "
+        "기록에 없는 내용은 추측하지 말고 '관련 기록에서 확인되지 않습니다'라고 답한다. "
+        "답변은 3~4문장 이내로 간결하게 작성한다."
+    )
+    user = f"[검색 범위]\n{scope_label}\n\n[관련 기록]\n{entries_text}\n\n[질문]\n{query}"
+
+    raw = _call(system, user, max_tokens=500)
+    return raw.strip() if raw else "답변 생성에 실패했습니다. 잠시 후 다시 시도해주세요."

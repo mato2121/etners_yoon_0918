@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>감사 로그 · 업무 연속성 매뉴얼</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><a href="{{ url_for('dashboard') }}" style="color:#fff;text-decoration:none;">📋 업무 연속성 <span>매뉴얼 생성기</span></a></div>
+    <div class="right">
+      <a href="{{ url_for('search') }}" style="color:#fff;">🔎 질의 검색</a>
+      <a href="{{ url_for('settings') }}" style="color:#fff;">⚙️ 설정</a>
+      <a href="{{ url_for('admin_access') }}" style="color:#fff;">🔐 접근 권한</a>
+      <a href="{{ url_for('admin_dashboard') }}" style="color:#fff;">🛡️ 관리자 화면</a>
+      <span>👤 {{ current_user.username }} (관리자)</span>
+      <form action="{{ url_for('logout') }}" method="post">
+        <button type="submit" class="logout-btn">로그아웃</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="page">
+    <h1>🧾 감사 로그</h1>
+    <p class="subtitle">최근 200건의 활동 기록입니다.</p>
+
+    <div class="card">
+      <table class="admin-table">
+        <thead><tr><th>일시</th><th>담당자</th><th>활동</th><th>고객사</th><th>상세</th></tr></thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td>{{ log.actor.username if log.actor else '-' }}</td>
+            <td>{{ log.action_label }}</td>
+            <td>{% if log.client %}<a href="{{ url_for('client_detail', client_id=log.client.id) }}">{{ log.client.name }}</a>{% else %}-{% endif %}</td>
+            <td>{{ log.detail or '-' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="empty">아직 기록된 활동이 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

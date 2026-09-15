@@ -28,7 +28,9 @@ import ai
 from docx_export import build_manual_docx
 from models import (
     AppSetting,
+    AuditLog,
     Client,
+    ClientAccess,
     ExceptionRule,
     HandoverManual,
     KnowledgeEntry,
@@ -154,6 +156,24 @@ def _save_attachment(file_storage, client_id):
     return f"{client_id}/{stored_name}", original_name
 
 
+def check_client_access(client):
+    """접근 권한이 없으면 403. 감사 로그 등 다른 처리에 앞서 라우트 맨 앞에서 호출한다."""
+    if not client.is_accessible_by(current_user):
+        abort(403)
+
+
+def log_action(action, client=None, detail=None):
+    db.session.add(
+        AuditLog(
+            actor_id=current_user.id if current_user.is_authenticated else None,
+            action=action,
+            client_id=client.id if client else None,
+            detail=detail,
+        )
+    )
+    db.session.commit()
+
+
 # ---------------------------------------------------------------------------
 # 인증
 # ---------------------------------------------------------------------------
@@ -186,6 +206,7 @@ def register():
         db.session.add(user)
         db.session.commit()
         login_user(user)
+        log_action("register")
         return redirect(url_for("dashboard"))
 
     return render_template("register.html", username="")
@@ -203,6 +224,7 @@ def login():
         user = User.query.filter_by(username=username).first()
         if user and user.check_password(password):
             login_user(user)
+            log_action("login")
             return redirect(url_for("dashboard"))
 
         flash("아이디 또는 비밀번호가 올바르지 않습니다.")
@@ -214,6 +236,7 @@ def login():
 @app.route("/logout", methods=["POST"])
 @login_required
 def logout():
+    log_action("logout")
     logout_user()
     return redirect(url_for("login"))
 
@@ -230,7 +253,8 @@ def dashboard():
     query = Client.query
     if q:
         query = query.filter(Client.name.ilike(f"%{q}%"))
-    clients = query.all()
+    all_clients = query.all()
+    clients = [c for c in all_clients if c.is_accessible_by(current_user)]
 
     summary = {}
     for c in clients:
@@ -270,8 +294,10 @@ def create_client():
     if Client.query.filter_by(name=name).first():
         flash("이미 등록된 고객사명입니다.")
         return redirect(url_for("dashboard"))
-    db.session.add(Client(name=name))
+    client = Client(name=name, owner_id=current_user.id)
+    db.session.add(client)
     db.session.commit()
+    log_action("create_client", client=client, detail=name)
     return redirect(url_for("dashboard"))
 
 
@@ -279,6 +305,7 @@ def create_client():
 @login_required
 def client_detail(client_id):
     client = db.session.get(Client, client_id) or abort(404)
+    check_client_access(client)
 
     rules = client.rules.order_by(ExceptionRule.title).all()
     entries = client.entries.order_by(KnowledgeEntry.created_at.desc()).all()
@@ -321,6 +348,7 @@ def client_detail(client_id):
 @login_required
 def add_entry(client_id):
     client = db.session.get(Client, client_id) or abort(404)
+    check_client_access(client)
 
     entry_type = request.form.get("entry_type", "note")
     content = request.form.get("content", "").strip()
@@ -345,6 +373,7 @@ def add_entry(client_id):
     )
     db.session.add(entry)
     db.session.commit()
+    log_action("add_entry", client=client, detail=entry_type)
 
     if ai.is_enabled():
         updated = ai.update_exception_rules(client, triggering_entry_id=entry.id)
@@ -361,6 +390,8 @@ def add_entry(client_id):
 @app.route("/uploads/<int:client_id>/<path:filename>")
 @login_required
 def uploaded_file(client_id, filename):
+    client = db.session.get(Client, client_id) or abort(404)
+    check_client_access(client)
     client_dir = os.path.join(UPLOAD_DIR, str(client_id))
     return send_from_directory(client_dir, filename)
 
@@ -369,6 +400,7 @@ def uploaded_file(client_id, filename):
 @login_required
 def create_handover(client_id):
     client = db.session.get(Client, client_id) or abort(404)
+    check_client_access(client)
 
     if not ai.is_enabled():
         flash("AI 키가 설정되지 않아 인수인계 매뉴얼을 생성할 수 없습니다. 설정 화면에서 키를 등록해주세요.")
@@ -404,6 +436,7 @@ def create_handover(client_id):
     )
     db.session.add(manual)
     db.session.commit()
+    log_action("create_handover", client=client, detail=f"v{manual.id}")
     return redirect(url_for("view_handover", client_id=client.id, manual_id=manual.id))
 
 
@@ -411,6 +444,7 @@ def create_handover(client_id):
 @login_required
 def view_handover(client_id, manual_id):
     client = db.session.get(Client, client_id) or abort(404)
+    check_client_access(client)
     manual = db.session.get(HandoverManual, manual_id) or abort(404)
     if manual.client_id != client.id:
         abort(404)
@@ -421,10 +455,12 @@ def view_handover(client_id, manual_id):
 @login_required
 def export_handover(client_id, manual_id):
     client = db.session.get(Client, client_id) or abort(404)
+    check_client_access(client)
     manual = db.session.get(HandoverManual, manual_id) or abort(404)
     if manual.client_id != client.id:
         abort(404)
 
+    log_action("export_handover", client=client, detail=f"v{manual.id}")
     buffer = build_manual_docx(client.name, manual)
     filename = f"{client.name}_인수인계매뉴얼_{manual.created_at.strftime('%Y%m%d')}.docx"
     return send_file(
@@ -451,10 +487,12 @@ def settings():
         if new_key:
             setting.anthropic_api_key = new_key
             db.session.commit()
+            log_action("update_settings", detail="API 키 등록")
             flash("API 키가 저장되었습니다. AI 기능이 바로 활성화됩니다.")
         else:
             setting.anthropic_api_key = None
             db.session.commit()
+            log_action("update_settings", detail="API 키 삭제")
             flash("API 키가 삭제되었습니다.")
         return redirect(url_for("settings"))
 
@@ -491,6 +529,102 @@ def admin_dashboard():
         rules=all_rules,
         clients_without_rules=clients_without_rules,
     )
+
+
+# ---------------------------------------------------------------------------
+# 자연어 질의 검색
+# ---------------------------------------------------------------------------
+@app.route("/search")
+@login_required
+def search():
+    query = request.args.get("q", "").strip()
+    client_id = request.args.get("client_id", type=int)
+
+    accessible_clients = [c for c in Client.query.all() if c.is_accessible_by(current_user)]
+
+    answer = None
+    matched_entries = []
+    target_client = None
+    if query:
+        if client_id:
+            target_client = db.session.get(Client, client_id) or abort(404)
+            check_client_access(target_client)
+            pool = target_client.entries.order_by(KnowledgeEntry.created_at.desc()).all()
+            scope_label = target_client.name
+        else:
+            pool = [e for c in accessible_clients for e in c.entries]
+            scope_label = "담당 고객사 전체"
+
+        matched_entries = ai.find_relevant_entries(query, pool)
+        answer = ai.answer_question(query, scope_label, matched_entries)
+        log_action("search_query", client=target_client, detail=query[:100])
+
+    return render_template(
+        "search.html",
+        query=query,
+        answer=answer,
+        matched_entries=matched_entries,
+        clients=accessible_clients,
+        selected_client_id=client_id,
+        ai_enabled=ai.is_enabled(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 관리자: 고객사 접근 권한 관리
+# ---------------------------------------------------------------------------
+@app.route("/admin/access")
+@login_required
+def admin_access():
+    if not current_user.is_admin:
+        abort(403)
+    clients = Client.query.order_by(Client.name).all()
+    users = User.query.order_by(User.username).all()
+    return render_template("admin_access.html", clients=clients, users=users)
+
+
+@app.route("/admin/access/grant", methods=["POST"])
+@login_required
+def grant_access():
+    if not current_user.is_admin:
+        abort(403)
+    client_id = request.form.get("client_id", type=int)
+    user_id = request.form.get("user_id", type=int)
+    client = db.session.get(Client, client_id) or abort(404)
+    target_user = db.session.get(User, user_id) or abort(404)
+
+    exists = ClientAccess.query.filter_by(client_id=client_id, user_id=user_id).first()
+    if not exists:
+        db.session.add(ClientAccess(client_id=client_id, user_id=user_id))
+        db.session.commit()
+        log_action("grant_access", client=client, detail=f"→ {target_user.username}")
+    return redirect(url_for("admin_access"))
+
+
+@app.route("/admin/access/revoke", methods=["POST"])
+@login_required
+def revoke_access():
+    if not current_user.is_admin:
+        abort(403)
+    access_id = request.form.get("access_id", type=int)
+    access = db.session.get(ClientAccess, access_id) or abort(404)
+    client, target_user = access.client, access.user
+    db.session.delete(access)
+    db.session.commit()
+    log_action("revoke_access", client=client, detail=f"→ {target_user.username}")
+    return redirect(url_for("admin_access"))
+
+
+# ---------------------------------------------------------------------------
+# 관리자: 감사 로그
+# ---------------------------------------------------------------------------
+@app.route("/admin/audit-log")
+@login_required
+def audit_log():
+    if not current_user.is_admin:
+        abort(403)
+    logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(200).all()
+    return render_template("audit_log.html", logs=logs)
 
 
 if __name__ == "__main__":
