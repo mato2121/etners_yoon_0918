@@ -24,19 +24,25 @@ python app.py
 
 ## AI 기능 켜기 (선택)
 
-브리핑 자동 생성 / 새 기록 추가 시 예외 규칙 자동 갱신 / 인수인계 매뉴얼 생성 기능은
-Anthropic Claude API를 사용합니다. 키가 없어도 기록 작성/조회, 시드된 예시 데이터,
-Word 다운로드 등 나머지 기능은 모두 정상 동작합니다.
+브리핑 자동 생성 / 새 기록 추가 시 예외 규칙 자동 갱신 / 인수인계 매뉴얼 생성 / 자연어
+질의 검색 기능은 **Google Gemini 또는 Anthropic Claude** 중 등록된 쪽을 사용합니다.
+둘 다 없어도 기록 작성/조회, 시드된 예시 데이터, Word 다운로드 등 나머지 기능은 모두
+정상 동작합니다. 둘 다 등록되어 있으면 Gemini를 우선 사용합니다.
 
 **방법 1 — 화면에서 등록 (추천, 터미널 불필요)**
 
-관리자 계정(`demo`)으로 로그인 → 상단 **"⚙️ 설정"** → API 키 입력 후 저장.
+관리자 계정(`demo`)으로 로그인 → 상단 **"⚙️ 설정"** → Gemini 또는 Claude API 키 입력 후 저장.
 서버 재시작 없이 즉시 반영됩니다.
+
+- Gemini 키 발급: https://aistudio.google.com/apikey
+- Claude 키 발급: https://console.anthropic.com
 
 **방법 2 — 환경변수**
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...   # PowerShell: $env:ANTHROPIC_API_KEY = "sk-ant-..."
+export GEMINI_API_KEY=AIza...          # PowerShell: $env:GEMINI_API_KEY = "AIza..."
+# 또는
+export ANTHROPIC_API_KEY=sk-ant-...    # PowerShell: $env:ANTHROPIC_API_KEY = "sk-ant-..."
 python app.py
 ```
 

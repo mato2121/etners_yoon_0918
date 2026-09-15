@@ -23,7 +23,10 @@
 
   <div class="page">
     <h1>⚙️ 설정</h1>
-    <p class="subtitle">Anthropic API 키를 등록하면 터미널 없이 바로 AI 기능(브리핑/규칙갱신/인수인계 매뉴얼)이 켜집니다.</p>
+    <p class="subtitle">
+      Claude 또는 Gemini, 둘 중 하나만 등록해도 AI 기능(브리핑/규칙갱신/인수인계 매뉴얼/질의 검색)이 켜집니다.
+      둘 다 등록되어 있으면 Gemini를 우선 사용합니다.
+    </p>
 
     {% with messages = get_flashed_messages() %}
       {% if messages %}
@@ -34,29 +37,54 @@
     {% endwith %}
 
     <div class="card">
-      <h2>AI 상태: {{ '🟢 활성화됨' if ai_enabled else '⚪ 비활성화' }}</h2>
-      <p class="subtitle" style="margin-bottom:16px;">
-        현재 키: {{ masked_key or '설정되지 않음' }}
-      </p>
+      <h2>
+        AI 상태: {{ '🟢 활성화됨' if ai_enabled else '⚪ 비활성화' }}
+        {% if active_provider %}<span class="tag-ok" style="margin-left:6px;">{{ 'Gemini' if active_provider == 'gemini' else 'Claude' }} 사용 중</span>{% endif %}
+      </h2>
+    </div>
 
+    <div class="card">
+      <h2>✨ Gemini API 키</h2>
+      <p class="subtitle" style="margin-bottom:12px;">현재 키: {{ masked_gemini_key or '설정되지 않음' }}</p>
       <form class="auth-form" action="{{ url_for('settings') }}" method="post">
+        <input type="hidden" name="form_name" value="gemini">
+        <label for="gemini_api_key">Gemini API 키</label>
+        <input type="password" id="gemini_api_key" name="gemini_api_key"
+               placeholder="AIza... (aistudio.google.com/apikey 에서 발급)" autocomplete="off">
+        <button type="submit">저장</button>
+      </form>
+      {% if masked_gemini_key %}
+      <form action="{{ url_for('settings') }}" method="post" style="margin-top:10px;">
+        <input type="hidden" name="form_name" value="gemini">
+        <input type="hidden" name="gemini_api_key" value="">
+        <button type="submit" class="btn btn-secondary">저장된 키 삭제</button>
+      </form>
+      {% endif %}
+      <p style="font-size:13px;color:#8593a0;margin-top:14px;">
+        1. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> 접속 후 로그인<br>
+        2. "Create API key" 클릭<br>
+        3. 생성된 <code>AIza...</code> 키를 복사해서 위 입력창에 붙여넣고 저장
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>🤖 Claude API 키</h2>
+      <p class="subtitle" style="margin-bottom:12px;">현재 키: {{ masked_anthropic_key or '설정되지 않음' }}</p>
+      <form class="auth-form" action="{{ url_for('settings') }}" method="post">
+        <input type="hidden" name="form_name" value="anthropic">
         <label for="anthropic_api_key">Anthropic API 키</label>
         <input type="password" id="anthropic_api_key" name="anthropic_api_key"
                placeholder="sk-ant-... (console.anthropic.com 에서 발급)" autocomplete="off">
         <button type="submit">저장</button>
       </form>
-
-      {% if has_db_key %}
+      {% if masked_anthropic_key %}
       <form action="{{ url_for('settings') }}" method="post" style="margin-top:10px;">
+        <input type="hidden" name="form_name" value="anthropic">
         <input type="hidden" name="anthropic_api_key" value="">
         <button type="submit" class="btn btn-secondary">저장된 키 삭제</button>
       </form>
       {% endif %}
-    </div>
-
-    <div class="card">
-      <h2>키는 어디서 받나요?</h2>
-      <p style="font-size:13.5px;color:#4b5a67;">
+      <p style="font-size:13px;color:#8593a0;margin-top:14px;">
         1. <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> 접속 후 로그인<br>
         2. 왼쪽 메뉴 "API Keys" → "Create Key"<br>
         3. 생성된 <code>sk-ant-...</code> 키를 복사해서 위 입력창에 붙여넣고 저장

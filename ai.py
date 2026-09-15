@@ -1,7 +1,7 @@
-"""Anthropic Claude API 연동.
+"""AI 연동 (Anthropic Claude / Google Gemini 중 등록된 쪽을 자동으로 사용).
 
-ANTHROPIC_API_KEY 환경변수가 없으면 모든 함수가 조용히 None을 반환합니다.
-즉, 이 모듈이 없어도(키 미설정) 앱의 나머지 기능(기록 저장/조회 등)은 정상 동작해야 합니다.
+둘 다 키가 없으면 모든 함수가 조용히 None을 반환합니다. 즉, 이 모듈이 없어도
+(키 미설정) 앱의 나머지 기능(기록 저장/조회 등)은 정상 동작해야 합니다.
 """
 import json
 import os
@@ -9,41 +9,46 @@ import re
 
 from models import ENTRY_TYPE_LABELS
 
-MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 
-def get_api_key():
-    """/settings 화면에서 저장한 키를 우선 사용하고, 없으면 환경변수를 본다."""
+def _get_setting():
     try:
         from models import AppSetting
 
-        setting = AppSetting.get()
-        if setting.anthropic_api_key:
-            return setting.anthropic_api_key
+        return AppSetting.get()
     except Exception:  # noqa: BLE001 - DB 컨텍스트 밖 등에서 호출돼도 죽지 않게
-        pass
+        return None
+
+
+def get_anthropic_api_key():
+    """/settings 화면에서 저장한 키를 우선 사용하고, 없으면 환경변수를 본다."""
+    setting = _get_setting()
+    if setting and setting.anthropic_api_key:
+        return setting.anthropic_api_key
     return os.environ.get("ANTHROPIC_API_KEY")
 
 
-def get_ai_client():
-    """Anthropic 클라이언트를 반환. API 키가 없거나 SDK 문제가 있으면 None.
+def get_gemini_api_key():
+    """/settings 화면에서 저장한 키를 우선 사용하고, 없으면 환경변수를 본다."""
+    setting = _get_setting()
+    if setting and setting.gemini_api_key:
+        return setting.gemini_api_key
+    return os.environ.get("GEMINI_API_KEY")
 
-    설정 화면에서 키를 바꾸면 즉시 반영되도록, 매번 새로 만든다(가벼운 객체라 비용 미미).
-    """
-    api_key = get_api_key()
-    if not api_key:
-        return None
 
-    try:
-        import anthropic
-
-        return anthropic.Anthropic(api_key=api_key)
-    except Exception:  # noqa: BLE001 - SDK 미설치 등 어떤 이유든 AI 기능만 비활성화
-        return None
+def active_provider():
+    """둘 다 등록돼 있으면 Gemini를 우선 사용한다. 하나도 없으면 None."""
+    if get_gemini_api_key():
+        return "gemini"
+    if get_anthropic_api_key():
+        return "anthropic"
+    return None
 
 
 def is_enabled():
-    return get_ai_client() is not None
+    return active_provider() is not None
 
 
 def _extract_json(text):
@@ -58,12 +63,25 @@ def _extract_json(text):
 
 
 def _call(system, user, max_tokens=1500):
-    client = get_ai_client()
-    if not client:
+    """등록된 AI 제공자(Gemini 우선, 없으면 Claude)로 호출한다. 실패/미설정 시 None."""
+    provider = active_provider()
+    if provider == "gemini":
+        return _call_gemini(system, user, max_tokens)
+    if provider == "anthropic":
+        return _call_anthropic(system, user, max_tokens)
+    return None
+
+
+def _call_anthropic(system, user, max_tokens):
+    api_key = get_anthropic_api_key()
+    if not api_key:
         return None
     try:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
-            model=MODEL,
+            model=CLAUDE_MODEL,
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],
@@ -71,6 +89,28 @@ def _call(system, user, max_tokens=1500):
         return "".join(
             block.text for block in response.content if getattr(block, "type", None) == "text"
         )
+    except Exception:  # noqa: BLE001 - 네트워크/키 오류 등 무엇이든 AI 비활성화로 취급
+        return None
+
+
+def _call_gemini(system, user, max_tokens):
+    api_key = get_gemini_api_key()
+    if not api_key:
+        return None
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=user,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=max_tokens,
+            ),
+        )
+        return response.text
     except Exception:  # noqa: BLE001 - 네트워크/키 오류 등 무엇이든 AI 비활성화로 취급
         return None
 
@@ -306,8 +346,7 @@ def answer_question(query, scope_label, relevant_entries):
         for e in relevant_entries
     )
 
-    client = get_ai_client()
-    if not client:
+    if not is_enabled():
         return (
             "⚠️ AI 키가 없어 답변을 생성할 수 없습니다. 관련 기록만 나열합니다.\n\n"
             + entries_text

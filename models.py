@@ -29,10 +29,11 @@ STALE_RULE_DAYS = 90  # 이 기간 동안 갱신 안 되면 "오래됨"으로 �
 
 
 class AppSetting(db.Model):
-    """앱 전역 설정 (딱 1행만 사용). Anthropic API 키를 터미널 없이 화면에서 저장하기 위함."""
+    """앱 전역 설정 (딱 1행만 사용). AI API 키를 터미널 없이 화면에서 저장하기 위함."""
 
     id = db.Column(db.Integer, primary_key=True)
     anthropic_api_key = db.Column(db.String(200), nullable=True)
+    gemini_api_key = db.Column(db.String(200), nullable=True)
 
     @staticmethod
     def get():

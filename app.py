@@ -483,30 +483,39 @@ def settings():
     setting = AppSetting.get()
 
     if request.method == "POST":
-        new_key = request.form.get("anthropic_api_key", "").strip()
-        if new_key:
-            setting.anthropic_api_key = new_key
+        form_name = request.form.get("form_name")
+
+        if form_name == "anthropic":
+            new_key = request.form.get("anthropic_api_key", "").strip()
+            setting.anthropic_api_key = new_key or None
             db.session.commit()
-            log_action("update_settings", detail="API 키 등록")
-            flash("API 키가 저장되었습니다. AI 기능이 바로 활성화됩니다.")
-        else:
-            setting.anthropic_api_key = None
+            log_action("update_settings", detail="Claude API 키 " + ("등록" if new_key else "삭제"))
+            flash("Claude API 키가 저장되었습니다." if new_key else "Claude API 키가 삭제되었습니다.")
+        elif form_name == "gemini":
+            new_key = request.form.get("gemini_api_key", "").strip()
+            setting.gemini_api_key = new_key or None
             db.session.commit()
-            log_action("update_settings", detail="API 키 삭제")
-            flash("API 키가 삭제되었습니다.")
+            log_action("update_settings", detail="Gemini API 키 " + ("등록" if new_key else "삭제"))
+            flash("Gemini API 키가 저장되었습니다." if new_key else "Gemini API 키가 삭제되었습니다.")
+
         return redirect(url_for("settings"))
 
-    masked_key = None
-    if setting.anthropic_api_key:
-        masked_key = "•" * 10 + setting.anthropic_api_key[-4:]
-    elif os.environ.get("ANTHROPIC_API_KEY"):
-        masked_key = "(환경변수 ANTHROPIC_API_KEY 사용 중)"
+    def mask(value):
+        return "•" * 10 + value[-4:] if value else None
+
+    masked_anthropic_key = mask(setting.anthropic_api_key) or (
+        "(환경변수 ANTHROPIC_API_KEY 사용 중)" if os.environ.get("ANTHROPIC_API_KEY") else None
+    )
+    masked_gemini_key = mask(setting.gemini_api_key) or (
+        "(환경변수 GEMINI_API_KEY 사용 중)" if os.environ.get("GEMINI_API_KEY") else None
+    )
 
     return render_template(
         "settings.html",
-        masked_key=masked_key,
+        masked_anthropic_key=masked_anthropic_key,
+        masked_gemini_key=masked_gemini_key,
         ai_enabled=ai.is_enabled(),
-        has_db_key=bool(setting.anthropic_api_key),
+        active_provider=ai.active_provider(),
     )
 
 
