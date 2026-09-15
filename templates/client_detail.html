@@ -39,7 +39,7 @@
     <!-- 브리핑: 이 고객사 처리를 시작할 때 바로 보는 영역 -->
     {% if briefing %}
     <div class="briefing-box">
-      <div class="label">🔔 이 고객사 처리 전 확인하세요</div>
+      <div class="label">🔔 이 고객사 처리 전 확인하세요 (같은 지식베이스에서 요약)</div>
       <div class="content">{{ briefing }}</div>
     </div>
     {% else %}
@@ -97,7 +97,10 @@
     </div>
 
     <div class="card">
-      <h2>인수인계 매뉴얼</h2>
+      <h2>🔄 인수인계 모드</h2>
+      <p class="subtitle" style="margin-bottom:16px;">
+        위 브리핑과 똑같은 지식베이스(예외 규칙·기록)를 사용해, 후임자가 바로 볼 수 있는 전체 매뉴얼로 재구성합니다.
+      </p>
       {% if manuals %}
       <ul class="manual-list">
         {% for manual in manuals %}
@@ -137,7 +140,7 @@
           <textarea name="handover_note" placeholder="예: 이번 주 급한 건 없음, 다음 급여일은 25일"></textarea>
         </label>
         <button type="submit" class="btn" {{ 'disabled' if not ai_enabled else '' }}>
-          인수인계 매뉴얼 새로 생성
+          🔄 인수인계 모드 시작 (전체 매뉴얼 생성)
         </button>
       </form>
     </div>

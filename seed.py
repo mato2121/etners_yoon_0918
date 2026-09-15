@@ -185,12 +185,101 @@ def seed_if_empty():
         ]
     )
 
-    # newstaff는 관리자가 아니므로, 데모에서 바로 두 고객사를 볼 수 있도록 접근 권한을 부여해둔다
+    # ---- 고객사 3: 무한상사 ----
+    muhan = Client(name="무한상사", owner_id=demo_user.id, created_at=now - timedelta(days=90))
+    db.session.add(muhan)
+    db.session.flush()
+
+    db.session.add_all(
+        [
+            KnowledgeEntry(
+                client_id=muhan.id,
+                author_id=demo_user.id,
+                entry_type="note",
+                content="영업직 판매수당은 매출 확정일이 아니라 '입금 완료일' 기준으로 정산해야 함. 이 회사만의 규정.",
+                created_at=now - timedelta(days=80),
+            ),
+            KnowledgeEntry(
+                client_id=muhan.id,
+                author_id=demo_user.id,
+                entry_type="message",
+                content="[대표님 요청] 명절 상여금은 다른 고객사와 달리 추석/설 전전날이 아니라 일주일 전에 미리 지급해달라고 함.",
+                created_at=now - timedelta(days=50),
+            ),
+            KnowledgeEntry(
+                client_id=muhan.id,
+                author_id=demo_user.id,
+                entry_type="correction",
+                content="지난달 판매수당을 매출 확정일 기준으로 잘못 계산해서 정정 신고함. 담당자 교체 시 반드시 인지시켜야 할 사항.",
+                created_at=now - timedelta(days=12),
+            ),
+        ]
+    )
+    db.session.add_all(
+        [
+            ExceptionRule(
+                client_id=muhan.id,
+                title="판매수당 정산 기준",
+                detail="매출 확정일이 아닌 '입금 완료일' 기준으로 영업직 판매수당을 정산한다.",
+                updated_at=now - timedelta(days=60),
+            ),
+            ExceptionRule(
+                client_id=muhan.id,
+                title="명절 상여금 지급일",
+                detail="추석/설 연휴 시작 일주일 전에 미리 지급한다 (일반적인 전전날 지급과 다름).",
+                updated_at=now - timedelta(days=45),
+            ),
+        ]
+    )
+
+    # ---- 고객사 4: (주)대성건설 ----
+    daesung = Client(name="(주)대성건설", owner_id=demo_user.id, created_at=now - timedelta(days=70))
+    db.session.add(daesung)
+    db.session.flush()
+
+    db.session.add_all(
+        [
+            KnowledgeEntry(
+                client_id=daesung.id,
+                author_id=demo_user.id,
+                entry_type="note",
+                content="일용직 근로자 비중이 높아서, 4대보험 중 국민연금·건강보험은 월 8일 이상 근무자만 가입 대상으로 별도 관리해야 함.",
+                created_at=now - timedelta(days=65),
+            ),
+            KnowledgeEntry(
+                client_id=daesung.id,
+                author_id=demo_user.id,
+                entry_type="note",
+                content="산재보험료율은 본사가 아니라 현장별로 다르게 적용됨 (공사 종류에 따라 요율표 확인 필수).",
+                created_at=now - timedelta(days=30),
+            ),
+        ]
+    )
+    db.session.add_all(
+        [
+            ExceptionRule(
+                client_id=daesung.id,
+                title="일용직 4대보험 가입 기준",
+                detail="월 8일 이상 근무한 일용직만 국민연금·건강보험 가입 대상으로 별도 관리한다.",
+                updated_at=now - timedelta(days=25),
+            ),
+            ExceptionRule(
+                client_id=daesung.id,
+                title="현장별 산재보험 요율",
+                detail="산재보험료율은 본사 일괄 적용이 아니라 공사 현장(공종)별로 다르게 적용되므로 신고 전 요율표를 반드시 확인한다.",
+                updated_at=now - timedelta(days=25),
+            ),
+        ]
+    )
+
+    # newstaff는 관리자가 아니므로, 데모에서 바로 모든 고객사를 볼 수 있도록 접근 권한을 부여해둔다
     # (실제로는 /admin/access 화면에서 관리자가 직접 부여/회수하게 된다).
     db.session.add_all(
         [
             ClientAccess(client_id=hanbit.id, user_id=newstaff_user.id),
             ClientAccess(client_id=green.id, user_id=newstaff_user.id),
+            ClientAccess(client_id=muhan.id, user_id=newstaff_user.id),
+            ClientAccess(client_id=daesung.id, user_id=newstaff_user.id),
         ]
     )
 
