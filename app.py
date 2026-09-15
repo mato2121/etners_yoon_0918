@@ -58,6 +58,10 @@ if database_url:
     elif database_url.startswith("postgresql://"):
         database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
     app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+elif os.environ.get("VERCEL"):
+    # Vercel 서버리스는 배포 디렉터리가 읽기 전용이라 /tmp 에만 쓸 수 있고,
+    # 그마저도 인스턴스가 재시작되면 초기화됩니다(DATABASE_URL 미설정 시 임시 동작용).
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:////tmp/continuity.db"
 else:
     db_path = os.path.join(BASE_DIR, "continuity.db")
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
