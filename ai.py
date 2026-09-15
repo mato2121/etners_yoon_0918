@@ -18,7 +18,15 @@ def _get_setting():
         from models import AppSetting
 
         return AppSetting.get()
-    except Exception:  # noqa: BLE001 - DB 컨텍스트 밖 등에서 호출돼도 죽지 않게
+    except Exception:  # noqa: BLE001 - DB 컨텍스트 밖/스키마 불일치 등에서 호출돼도 죽지 않게
+        # 실패한 쿼리를 그냥 무시하면 DB 트랜잭션이 "aborted" 상태로 남아, 같은 요청 안의
+        # 이후 모든 쿼리가 연쇄적으로 실패한다. 반드시 롤백해서 세션을 정상 상태로 되돌린다.
+        try:
+            from models import db
+
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
         return None
 
 

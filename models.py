@@ -1,4 +1,4 @@
-"""업무 연속성 매뉴얼 자동 생성기 - 데이터 모델."""
+"""고객사 지식관리 AI - 데이터 모델."""
 from datetime import datetime
 
 from flask_login import UserMixin
