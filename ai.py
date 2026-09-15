@@ -174,10 +174,12 @@ def update_exception_rules(client_row, triggering_entry_id=None):
 
     raw = _call(system, user)
     if not raw:
+        print("[ai] 규칙 갱신 실패: _call()이 빈 응답을 반환함 (호출 자체가 실패)")
         return False
 
     parsed = _extract_json(raw)
     if not parsed or "rules" not in parsed:
+        print(f"[ai] 규칙 갱신 실패: 응답에서 JSON을 못 찾음. raw={raw!r}")
         return False
 
     new_rules = []
@@ -316,12 +318,14 @@ def generate_handover_manual(client_row, handover_context=None):
         '"body": "본문(여러 문장 가능, 필요하면 줄바꿈 \\n 사용)"}]}'
     )
 
-    raw = _call(system, user, max_tokens=2000)
+    raw = _call(system, user, max_tokens=4000)
     if not raw:
+        print("[ai] 매뉴얼 생성 실패: _call()이 빈 응답을 반환함 (호출 자체가 실패)")
         return None
 
     parsed = _extract_json(raw)
     if not parsed or "sections" not in parsed:
+        print(f"[ai] 매뉴얼 생성 실패: 응답에서 JSON을 못 찾음. raw={raw!r}")
         return None
 
     return parsed["sections"]
