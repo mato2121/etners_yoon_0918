@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ client.name }} 인수인계 매뉴얼</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><a href="{{ url_for('dashboard') }}" style="color:#fff;text-decoration:none;">📋 업무 연속성 <span>매뉴얼 생성기</span></a></div>
+    <div class="right">
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('settings') }}" style="color:#fff;">⚙️ 설정</a>
+      <a href="{{ url_for('admin_dashboard') }}" style="color:#fff;">🛡️ 관리자 화면</a>
+      {% endif %}
+      <span>👤 {{ current_user.username }}</span>
+      <form action="{{ url_for('logout') }}" method="post">
+        <button type="submit" class="logout-btn">로그아웃</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="page">
+    <p class="subtitle"><a href="{{ url_for('client_detail', client_id=client.id) }}">← {{ client.name }}으로</a></p>
+    <h1>{{ client.name }} — 업무 인수인계 매뉴얼</h1>
+    <div class="doc-meta">
+      생성일 {{ manual.created_at.strftime('%Y-%m-%d %H:%M') }}
+      {% if manual.generated_by %} · 인계자 {{ manual.generated_by.username }}{% endif %}
+      {% if manual.handed_to %} · 인수자 {{ manual.handed_to.username }}{% endif %}
+      {% if manual.reason_label %} · 사유 {{ manual.reason_label }}{% endif %}
+    </div>
+    {% if manual.handover_note %}
+    <div class="briefing-box muted" style="margin-bottom:20px;">
+      <div class="label">인계자 메모</div>
+      <div class="content">{{ manual.handover_note }}</div>
+    </div>
+    {% endif %}
+
+    <div class="action-row">
+      <a class="btn" href="{{ url_for('export_handover', client_id=client.id, manual_id=manual.id) }}">📄 Word로 다운로드</a>
+      <a class="btn btn-secondary" href="{{ url_for('client_detail', client_id=client.id) }}">고객사 페이지로 돌아가기</a>
+    </div>
+
+    <div class="card">
+      {% for section in manual.sections %}
+      <div class="manual-section">
+        <h3>{{ section.heading }}</h3>
+        <div class="body">{{ section.body }}</div>
+      </div>
+      {% else %}
+      <p class="empty">매뉴얼 내용을 불러올 수 없습니다.</p>
+      {% endfor %}
+    </div>
+  </div>
+</body>
+</html>

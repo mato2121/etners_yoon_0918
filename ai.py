@@ -1,0 +1,275 @@
+"""Anthropic Claude API 연동.
+
+ANTHROPIC_API_KEY 환경변수가 없으면 모든 함수가 조용히 None을 반환합니다.
+즉, 이 모듈이 없어도(키 미설정) 앱의 나머지 기능(기록 저장/조회 등)은 정상 동작해야 합니다.
+"""
+import json
+import os
+import re
+
+from models import ENTRY_TYPE_LABELS
+
+MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
+
+
+def get_api_key():
+    """/settings 화면에서 저장한 키를 우선 사용하고, 없으면 환경변수를 본다."""
+    try:
+        from models import AppSetting
+
+        setting = AppSetting.get()
+        if setting.anthropic_api_key:
+            return setting.anthropic_api_key
+    except Exception:  # noqa: BLE001 - DB 컨텍스트 밖 등에서 호출돼도 죽지 않게
+        pass
+    return os.environ.get("ANTHROPIC_API_KEY")
+
+
+def get_ai_client():
+    """Anthropic 클라이언트를 반환. API 키가 없거나 SDK 문제가 있으면 None.
+
+    설정 화면에서 키를 바꾸면 즉시 반영되도록, 매번 새로 만든다(가벼운 객체라 비용 미미).
+    """
+    api_key = get_api_key()
+    if not api_key:
+        return None
+
+    try:
+        import anthropic
+
+        return anthropic.Anthropic(api_key=api_key)
+    except Exception:  # noqa: BLE001 - SDK 미설치 등 어떤 이유든 AI 기능만 비활성화
+        return None
+
+
+def is_enabled():
+    return get_ai_client() is not None
+
+
+def _extract_json(text):
+    """모델 응답에서 첫 번째 JSON 객체/배열만 안전하게 추출."""
+    match = re.search(r"[\{\[].*[\}\]]", text, re.DOTALL)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(0))
+    except (ValueError, TypeError):
+        return None
+
+
+def _call(system, user, max_tokens=1500):
+    client = get_ai_client()
+    if not client:
+        return None
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return "".join(
+            block.text for block in response.content if getattr(block, "type", None) == "text"
+        )
+    except Exception:  # noqa: BLE001 - 네트워크/키 오류 등 무엇이든 AI 비활성화로 취급
+        return None
+
+
+def _normalize_title(title):
+    return (title or "").strip().lower()
+
+
+def update_exception_rules(client_row, triggering_entry_id=None):
+    """새 기록을 반영해 예외 규칙 전체를 다시 정리하고, 이전 상태와의 차이를 RuleChangeLog로 남긴다."""
+    from models import ExceptionRule, KnowledgeEntry, RuleChangeLog, db
+
+    existing = client_row.rules.all()
+    existing_text = (
+        "\n".join(
+            f"- {r.title}: {r.detail}"
+            + (f" (매월 {r.day_of_month}일 관련 마감/리마인더 있음)" if r.day_of_month else "")
+            for r in existing
+        )
+        or "(아직 없음)"
+    )
+
+    recent_entries = (
+        KnowledgeEntry.query.filter_by(client_id=client_row.id)
+        .order_by(KnowledgeEntry.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    entries_text = "\n".join(
+        f"[{ENTRY_TYPE_LABELS.get(e.entry_type, e.entry_type)}] {e.content}"
+        for e in reversed(recent_entries)
+    )
+
+    system = (
+        "너는 급여/복리후생 아웃소싱 회사의 고객사별 예외 처리 규칙을 관리하는 보조 도구다. "
+        "담당자가 남긴 메모/정정이력/메시지를 바탕으로, 이 고객사를 처리할 때 반드시 지켜야 할 "
+        "'예외 규칙'들을 짧고 실무적인 한국어로 정리한다. 같은 내용은 하나로 합치고, 오래되어 "
+        "더 이상 유효하지 않아 보이는 규칙은 제외한다. 만약 어떤 규칙이 '매월 특정 날짜까지 "
+        "무엇을 해야 한다'는 반복 마감/리마인더 성격을 가지면 day_of_month(1~31)를 채우고, "
+        "아니면 null로 둔다. 반드시 JSON만 출력한다."
+    )
+    user = (
+        f"[기존 예외 규칙]\n{existing_text}\n\n"
+        f"[담당자가 남긴 최근 기록 전체]\n{entries_text}\n\n"
+        "위 내용을 반영해 최신 상태의 예외 규칙 전체 목록을 다시 만들어줘. "
+        '다음 형식의 JSON으로만 응답: {"rules": [{"title": "규칙 제목(10자 내외)", '
+        '"detail": "구체적인 처리 방법 1~2문장", "day_of_month": 20 또는 null}]}'
+    )
+
+    raw = _call(system, user)
+    if not raw:
+        return False
+
+    parsed = _extract_json(raw)
+    if not parsed or "rules" not in parsed:
+        return False
+
+    new_rules = []
+    for rule in parsed["rules"]:
+        title = (rule.get("title") or "").strip()
+        detail = (rule.get("detail") or "").strip()
+        day = rule.get("day_of_month")
+        day = int(day) if isinstance(day, (int, float)) and 1 <= int(day) <= 31 else None
+        if title and detail:
+            new_rules.append({"title": title, "detail": detail, "day_of_month": day})
+
+    # --- 변경 이력(diff) 계산: 제목 기준으로 기존 규칙과 비교 ---
+    existing_by_key = {_normalize_title(r.title): r for r in existing}
+    new_by_key = {_normalize_title(r["title"]): r for r in new_rules}
+
+    for key, new_rule in new_by_key.items():
+        old_rule = existing_by_key.get(key)
+        if old_rule is None:
+            db.session.add(
+                RuleChangeLog(
+                    client_id=client_row.id,
+                    triggering_entry_id=triggering_entry_id,
+                    change_type="added",
+                    rule_title=new_rule["title"],
+                    before_detail=None,
+                    after_detail=new_rule["detail"],
+                )
+            )
+        elif old_rule.detail.strip() != new_rule["detail"].strip():
+            db.session.add(
+                RuleChangeLog(
+                    client_id=client_row.id,
+                    triggering_entry_id=triggering_entry_id,
+                    change_type="updated",
+                    rule_title=new_rule["title"],
+                    before_detail=old_rule.detail,
+                    after_detail=new_rule["detail"],
+                )
+            )
+
+    for key, old_rule in existing_by_key.items():
+        if key not in new_by_key:
+            db.session.add(
+                RuleChangeLog(
+                    client_id=client_row.id,
+                    triggering_entry_id=triggering_entry_id,
+                    change_type="removed",
+                    rule_title=old_rule.title,
+                    before_detail=old_rule.detail,
+                    after_detail=None,
+                )
+            )
+
+    ExceptionRule.query.filter_by(client_id=client_row.id).delete()
+    for rule in new_rules:
+        db.session.add(
+            ExceptionRule(
+                client_id=client_row.id,
+                title=rule["title"],
+                detail=rule["detail"],
+                day_of_month=rule["day_of_month"],
+            )
+        )
+    db.session.commit()
+    return True
+
+
+def generate_briefing(client_row):
+    """고객사 처리를 시작할 때 보여줄 짧은 브리핑 생성."""
+    rules = client_row.rules.all()
+    if not rules:
+        return None
+
+    rules_text = "\n".join(f"- {r.title}: {r.detail}" for r in rules)
+
+    system = (
+        "너는 급여/복리후생 담당자가 특정 고객사 업무를 막 시작하려는 순간에 보여줄 "
+        "'브리핑'을 작성하는 보조 도구다. 담당자가 실수하기 쉬운 부분 위주로, "
+        "3~6개의 짧은 불릿 포인트로 요약한다. 서론/결론 없이 불릿만 출력한다."
+    )
+    user = f"[이 고객사의 예외 규칙]\n{rules_text}\n\n오늘 이 고객사 업무를 시작하는 담당자에게 줄 브리핑을 작성해줘."
+
+    raw = _call(system, user, max_tokens=600)
+    return raw.strip() if raw else None
+
+
+def generate_handover_manual(client_row, handover_context=None):
+    """전체 인수인계 매뉴얼(구조화된 섹션 JSON)을 생성.
+
+    handover_context: {"from_name", "to_name", "reason_label", "note"} 형태의 선택적 dict.
+    """
+    from models import KnowledgeEntry
+
+    rules = client_row.rules.all()
+    rules_text = "\n".join(f"- {r.title}: {r.detail}" for r in rules) or "(등록된 예외 규칙 없음)"
+
+    entries = (
+        KnowledgeEntry.query.filter_by(client_id=client_row.id)
+        .order_by(KnowledgeEntry.created_at.asc())
+        .all()
+    )
+    entries_text = "\n".join(
+        f"[{e.created_at.strftime('%Y-%m-%d')}] [{ENTRY_TYPE_LABELS.get(e.entry_type, e.entry_type)}] {e.content}"
+        for e in entries
+    ) or "(등록된 기록 없음)"
+
+    handover_text = "(별도 인수인계 정보 없음)"
+    if handover_context:
+        parts = []
+        if handover_context.get("from_name"):
+            parts.append(f"인계자: {handover_context['from_name']}")
+        if handover_context.get("to_name"):
+            parts.append(f"인수자: {handover_context['to_name']}")
+        if handover_context.get("reason_label"):
+            parts.append(f"사유: {handover_context['reason_label']}")
+        if handover_context.get("note"):
+            parts.append(f"인계자가 남긴 메모: {handover_context['note']}")
+        if parts:
+            handover_text = "\n".join(parts)
+
+    system = (
+        "너는 급여/복리후생 담당자의 업무 인수인계 매뉴얼을 작성하는 보조 도구다. "
+        "이 문서는 이 고객사를 처음 맡는 후임자가 읽고 바로 업무를 이어받을 수 있어야 한다. "
+        "인수인계 정보(인계자/인수자/사유/메모)가 주어지면 문서 도입부에서 그 내용을 자연스럽게 "
+        "언급하며 인수자를 직접 향한 어조로 쓴다. 반드시 JSON만 출력한다."
+    )
+    user = (
+        f"[고객사명]\n{client_row.name}\n\n"
+        f"[인수인계 정보]\n{handover_text}\n\n"
+        f"[현재 정리된 예외 규칙]\n{rules_text}\n\n"
+        f"[담당자가 남긴 전체 기록(시간순)]\n{entries_text}\n\n"
+        "위 내용을 바탕으로 인수인계 매뉴얼을 작성해줘. 다음 섹션을 포함하되 내용이 없으면 "
+        "해당 섹션은 생략해도 된다: 인수인계 안내(인계자/인수자/사유/메모가 있을 때만), 고객사 개요, "
+        "상여금/급여 처리 시 유의사항, 4대보험 신고 유의사항, 기타 예외 규칙, 최근 정정이력 요약. "
+        '다음 형식의 JSON으로만 응답: {"sections": [{"heading": "섹션 제목", '
+        '"body": "본문(여러 문장 가능, 필요하면 줄바꿈 \\n 사용)"}]}'
+    )
+
+    raw = _call(system, user, max_tokens=2000)
+    if not raw:
+        return None
+
+    parsed = _extract_json(raw)
+    if not parsed or "sections" not in parsed:
+        return None
+
+    return parsed["sections"]

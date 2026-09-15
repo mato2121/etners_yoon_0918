@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ client.name }} · 업무 연속성 매뉴얼</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><a href="{{ url_for('dashboard') }}" style="color:#fff;text-decoration:none;">📋 업무 연속성 <span>매뉴얼 생성기</span></a></div>
+    <div class="right">
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('settings') }}" style="color:#fff;">⚙️ 설정</a>
+      <a href="{{ url_for('admin_dashboard') }}" style="color:#fff;">🛡️ 관리자 화면</a>
+      {% endif %}
+      <span>👤 {{ current_user.username }}</span>
+      <form action="{{ url_for('logout') }}" method="post">
+        <button type="submit" class="logout-btn">로그아웃</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="page">
+    <h1>{{ client.name }}</h1>
+    <p class="subtitle"><a href="{{ url_for('dashboard') }}">← 고객사 목록으로</a></p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+      <div class="flash">
+        {% for message in messages %}<p>{{ message }}</p>{% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+
+    <!-- 브리핑: 이 고객사 처리를 시작할 때 바로 보는 영역 -->
+    {% if briefing %}
+    <div class="briefing-box">
+      <div class="label">🔔 이 고객사 처리 전 확인하세요</div>
+      <div class="content">{{ briefing }}</div>
+    </div>
+    {% else %}
+    <div class="briefing-box muted">
+      <div class="label">브리핑</div>
+      <div class="content">{{ briefing_message }}</div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <h2>예외 규칙 ({{ rules|length }})</h2>
+      {% if rules %}
+      <ul class="rule-list">
+        {% for rule in rules %}
+        <li>
+          <div class="rtitle">
+            {{ rule.title }}
+            {% if rule.day_of_month %}<span class="tag-day">매월 {{ rule.day_of_month }}일</span>{% endif %}
+            {% if rule.is_stale %}<span class="tag-stale">⚠ 오래됨</span>{% endif %}
+          </div>
+          <div class="rdetail">{{ rule.detail }}</div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty">아직 정리된 예외 규칙이 없습니다.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>규칙 변경 이력</h2>
+      {% if rule_changes %}
+      <ul class="change-list">
+        {% for c in rule_changes %}
+        <li>
+          <span class="badge badge-{{ c.change_type }}">{{ c.change_label }}</span>
+          <strong>{{ c.rule_title }}</strong>
+          <div class="meta">{{ c.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+          {% if c.change_type == 'updated' %}
+          <div class="diff">
+            <div class="before">이전: {{ c.before_detail }}</div>
+            <div class="after">이후: {{ c.after_detail }}</div>
+          </div>
+          {% elif c.change_type == 'removed' %}
+          <div class="diff"><div class="before">삭제된 내용: {{ c.before_detail }}</div></div>
+          {% else %}
+          <div class="diff"><div class="after">{{ c.after_detail }}</div></div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty">아직 변경 이력이 없습니다. (AI가 예외 규칙을 갱신할 때마다 기록됩니다)</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>인수인계 매뉴얼</h2>
+      {% if manuals %}
+      <ul class="manual-list">
+        {% for manual in manuals %}
+        <li>
+          <a href="{{ url_for('view_handover', client_id=client.id, manual_id=manual.id) }}">
+            {{ manual.created_at.strftime('%Y-%m-%d %H:%M') }} 생성본 보기
+          </a>
+          {% if manual.handed_to %} — {{ manual.generated_by.username if manual.generated_by else '?' }} → {{ manual.handed_to.username }}{% if manual.reason_label %} ({{ manual.reason_label }}){% endif %}{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty">아직 생성된 매뉴얼이 없습니다.</p>
+      {% endif %}
+
+      <form action="{{ url_for('create_handover', client_id=client.id) }}" method="post" class="handover-form">
+        <label>인수자
+          <select name="handed_to_id">
+            <option value="">선택 안 함</option>
+            {% for u in all_users %}
+              {% if u.id != current_user.id %}
+              <option value="{{ u.id }}">{{ u.username }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </label>
+        <label>사유
+          <select name="reason">
+            <option value="">선택 안 함</option>
+            <option value="vacation">휴가</option>
+            <option value="sick_leave">병가</option>
+            <option value="resignation">퇴사</option>
+            <option value="other">기타</option>
+          </select>
+        </label>
+        <label>인수자에게 남길 메모
+          <textarea name="handover_note" placeholder="예: 이번 주 급한 건 없음, 다음 급여일은 25일"></textarea>
+        </label>
+        <button type="submit" class="btn" {{ 'disabled' if not ai_enabled else '' }}>
+          인수인계 매뉴얼 새로 생성
+        </button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>기록 남기기</h2>
+      <form class="entry-form" action="{{ url_for('add_entry', client_id=client.id) }}" method="post" enctype="multipart/form-data">
+        <select name="entry_type">
+          <option value="note">메모</option>
+          <option value="correction">정정이력</option>
+          <option value="message">메시지</option>
+        </select>
+        <textarea name="content" placeholder="이 고객사 처리하면서 알아둘 점을 적어주세요" required></textarea>
+        <input type="file" name="attachment" accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.xlsx,.xls,.docx,.txt">
+        <button type="submit" class="btn">추가</button>
+      </form>
+
+      <h2 style="margin-top:22px;">전체 기록 ({{ entries|length }})</h2>
+      {% if entries %}
+      <ul class="entry-list">
+        {% for entry in entries %}
+        <li class="entry-item">
+          <span class="badge badge-{{ entry.entry_type }}">{{ entry.type_label }}</span>
+          {{ entry.content }}
+          {% if entry.attachment_path %}
+          <div class="attachment">
+            {% if entry.is_image_attachment %}
+            <a href="{{ url_for('uploaded_file', client_id=client.id, filename=entry.attachment_path.split('/')[-1]) }}" target="_blank">
+              <img src="{{ url_for('uploaded_file', client_id=client.id, filename=entry.attachment_path.split('/')[-1]) }}" alt="첨부 이미지">
+            </a>
+            {% else %}
+            <a href="{{ url_for('uploaded_file', client_id=client.id, filename=entry.attachment_path.split('/')[-1]) }}" target="_blank">📎 {{ entry.attachment_original_name }}</a>
+            {% endif %}
+          </div>
+          {% endif %}
+          <div class="meta">
+            {{ entry.created_at.strftime('%Y-%m-%d %H:%M') }}
+            {% if entry.author %} · {{ entry.author.username }}{% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty">아직 기록이 없습니다.</p>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

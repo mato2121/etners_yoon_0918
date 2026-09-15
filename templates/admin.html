@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>관리자 현황판 · 업무 연속성 매뉴얼</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><a href="{{ url_for('dashboard') }}" style="color:#fff;text-decoration:none;">📋 업무 연속성 <span>매뉴얼 생성기</span></a></div>
+    <div class="right">
+      <a href="{{ url_for('settings') }}" style="color:#fff;">⚙️ 설정</a>
+      <span>👤 {{ current_user.username }} (관리자)</span>
+      <form action="{{ url_for('logout') }}" method="post">
+        <button type="submit" class="logout-btn">로그아웃</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="page">
+    <h1>🛡️ 관리자 현황판</h1>
+    <p class="subtitle">전체 고객사의 예외 규칙을 오래된 순으로 모아봅니다. 오래 갱신되지 않은 규칙은 실제와 다를 위험이 있습니다.</p>
+
+    {% if clients_without_rules %}
+    <div class="card" style="border-color:#f0c6c6;">
+      <h2>⚠️ 정리된 예외 규칙이 하나도 없는 고객사</h2>
+      <ul class="rule-list">
+        {% for c in clients_without_rules %}
+        <li><a href="{{ url_for('client_detail', client_id=c.id) }}">{{ c.name }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <h2>전체 예외 규칙 (오래된 순)</h2>
+      {% if rules %}
+      <table class="admin-table">
+        <thead>
+          <tr><th>고객사</th><th>규칙</th><th>마지막 갱신</th><th>경과일</th><th>상태</th></tr>
+        </thead>
+        <tbody>
+          {% for rule in rules %}
+          <tr class="{{ 'stale-row' if rule.is_stale else '' }}">
+            <td><a href="{{ url_for('client_detail', client_id=rule.client_id) }}">{{ rule.client.name }}</a></td>
+            <td>
+              <div class="rtitle">{{ rule.title }}</div>
+              <div class="rdetail">{{ rule.detail }}</div>
+            </td>
+            <td>{{ rule.updated_at.strftime('%Y-%m-%d') }}</td>
+            <td>{{ rule.days_since_update }}일</td>
+            <td>
+              {% if rule.is_stale %}
+              <span class="tag-stale">⚠ 오래됨</span>
+              {% else %}
+              <span class="tag-ok">정상</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">등록된 예외 규칙이 없습니다.</p>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

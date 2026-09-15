@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>설정 · 업무 연속성 매뉴얼</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><a href="{{ url_for('dashboard') }}" style="color:#fff;text-decoration:none;">📋 업무 연속성 <span>매뉴얼 생성기</span></a></div>
+    <div class="right">
+      <a href="{{ url_for('admin_dashboard') }}" style="color:#fff;">🛡️ 관리자 화면</a>
+      <span>👤 {{ current_user.username }}</span>
+      <form action="{{ url_for('logout') }}" method="post">
+        <button type="submit" class="logout-btn">로그아웃</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="page">
+    <h1>⚙️ 설정</h1>
+    <p class="subtitle">Anthropic API 키를 등록하면 터미널 없이 바로 AI 기능(브리핑/규칙갱신/인수인계 매뉴얼)이 켜집니다.</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+      <div class="flash">
+        {% for message in messages %}<p>{{ message }}</p>{% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="card">
+      <h2>AI 상태: {{ '🟢 활성화됨' if ai_enabled else '⚪ 비활성화' }}</h2>
+      <p class="subtitle" style="margin-bottom:16px;">
+        현재 키: {{ masked_key or '설정되지 않음' }}
+      </p>
+
+      <form class="auth-form" action="{{ url_for('settings') }}" method="post">
+        <label for="anthropic_api_key">Anthropic API 키</label>
+        <input type="password" id="anthropic_api_key" name="anthropic_api_key"
+               placeholder="sk-ant-... (console.anthropic.com 에서 발급)" autocomplete="off">
+        <button type="submit">저장</button>
+      </form>
+
+      {% if has_db_key %}
+      <form action="{{ url_for('settings') }}" method="post" style="margin-top:10px;">
+        <input type="hidden" name="anthropic_api_key" value="">
+        <button type="submit" class="btn btn-secondary">저장된 키 삭제</button>
+      </form>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>키는 어디서 받나요?</h2>
+      <p style="font-size:13.5px;color:#4b5a67;">
+        1. <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> 접속 후 로그인<br>
+        2. 왼쪽 메뉴 "API Keys" → "Create Key"<br>
+        3. 생성된 <code>sk-ant-...</code> 키를 복사해서 위 입력창에 붙여넣고 저장
+      </p>
+    </div>
+  </div>
+</body>
+</html>

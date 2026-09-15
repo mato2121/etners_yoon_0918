@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>고객사 목록 · 업무 연속성 매뉴얼</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">📋 업무 연속성 <span>매뉴얼 생성기</span></div>
+    <div class="right">
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('settings') }}" style="color:#fff;">⚙️ 설정</a>
+      <a href="{{ url_for('admin_dashboard') }}" style="color:#fff;">🛡️ 관리자 화면</a>
+      {% endif %}
+      <span>👤 {{ current_user.username }}</span>
+      <form action="{{ url_for('logout') }}" method="post">
+        <button type="submit" class="logout-btn">로그아웃</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="page">
+    <h1>담당 고객사</h1>
+    <p class="subtitle">
+      {% if ai_enabled %}
+        AI 브리핑/매뉴얼 생성 기능이 활성화되어 있습니다.
+      {% else %}
+        ⚠️ AI 키(ANTHROPIC_API_KEY)가 설정되지 않아 브리핑/매뉴얼 자동 생성 기능은 비활성 상태입니다. 기록 작성·조회는 정상 동작합니다.
+      {% endif %}
+    </p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+      <div class="flash">
+        {% for message in messages %}<p>{{ message }}</p>{% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+
+    {% if reminders %}
+    <div class="card reminder-card">
+      <h2>🔔 이번 주 챙겨야 할 마감/리마인더</h2>
+      <ul class="reminder-list">
+        {% for r in reminders %}
+        <li>
+          <span class="rdate">{{ 'D-' ~ r.days_left if r.days_left > 0 else '오늘' }}</span>
+          <a href="{{ url_for('client_detail', client_id=r.client.id) }}">{{ r.client.name }}</a>
+          — {{ r.rule.title }} ({{ r.target_date.strftime('%m/%d') }})
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <form class="search-bar" method="get" action="{{ url_for('dashboard') }}">
+      <input type="text" name="q" value="{{ q }}" placeholder="고객사명 검색">
+      <select name="sort" onchange="this.form.submit()">
+        <option value="name" {{ 'selected' if sort == 'name' }}>이름순</option>
+        <option value="recent" {{ 'selected' if sort == 'recent' }}>최근 업데이트순</option>
+        <option value="entries" {{ 'selected' if sort == 'entries' }}>기록 많은순</option>
+      </select>
+      <button type="submit" class="btn btn-secondary">검색</button>
+    </form>
+
+    <div class="client-grid">
+      {% for client in clients %}
+      <a class="client-card" href="{{ url_for('client_detail', client_id=client.id) }}">
+        <div class="name">{{ client.name }}</div>
+        <div class="meta">
+          <span>예외 규칙 {{ summary[client.id].rule_count }}</span>
+          <span>기록 {{ summary[client.id].entry_count }}</span>
+        </div>
+        <div class="meta" style="margin-top:4px;">
+          최근 활동 {{ summary[client.id].last_activity.strftime('%Y-%m-%d') }}
+        </div>
+      </a>
+      {% else %}
+      <p class="empty">{{ '검색 결과가 없습니다.' if q else '등록된 고객사가 없습니다.' }}</p>
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <h2>새 고객사 추가</h2>
+      <form class="add-client-form" action="{{ url_for('create_client') }}" method="post">
+        <input type="text" name="name" placeholder="고객사명 (예: (주)한빛전자)" required>
+        <button type="submit">추가</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
