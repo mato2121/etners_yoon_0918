@@ -87,7 +87,8 @@ def _call_anthropic(system, user, max_tokens):
     try:
         import anthropic
 
-        client = anthropic.Anthropic(api_key=api_key)
+        # Vercel 서버리스 콜드 스타트 등으로 첫 연결이 느릴 수 있어 타임아웃/재시도를 넉넉히 준다.
+        client = anthropic.Anthropic(api_key=api_key, timeout=45.0, max_retries=4)
         response = client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=max_tokens,
@@ -98,7 +99,8 @@ def _call_anthropic(system, user, max_tokens):
             block.text for block in response.content if getattr(block, "type", None) == "text"
         )
     except Exception as exc:  # noqa: BLE001 - 네트워크/키 오류 등 무엇이든 AI 비활성화로 취급
-        print(f"[ai] Claude 호출 실패: {exc!r}")
+        cause = getattr(exc, "__cause__", None)
+        print(f"[ai] Claude 호출 실패: {exc!r} / cause={cause!r}")
         return None
 
 
