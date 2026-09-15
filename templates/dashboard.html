@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>고객사 목록 · 고객사 지식관리 AI</title>
+  <title>고객사 목록 · 노하우AI</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
   <div class="topbar">
-    <div class="brand">📋 고객사 지식관리 <span>AI</span></div>
+    <div class="brand">📋 노하우<span>AI</span></div>
     <div class="right">
       <a href="{{ url_for('search') }}" style="color:#fff;">🔎 질의 검색</a>
       {% if current_user.is_admin %}

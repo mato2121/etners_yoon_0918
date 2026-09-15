@@ -1,4 +1,4 @@
-"""고객사 지식관리 AI - 데이터 모델."""
+"""노하우AI - 데이터 모델."""
 from datetime import datetime
 
 from flask_login import UserMixin
