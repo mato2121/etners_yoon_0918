@@ -97,7 +97,8 @@ def _call_anthropic(system, user, max_tokens):
         return "".join(
             block.text for block in response.content if getattr(block, "type", None) == "text"
         )
-    except Exception:  # noqa: BLE001 - 네트워크/키 오류 등 무엇이든 AI 비활성화로 취급
+    except Exception as exc:  # noqa: BLE001 - 네트워크/키 오류 등 무엇이든 AI 비활성화로 취급
+        print(f"[ai] Claude 호출 실패: {exc!r}")
         return None
 
 
@@ -119,7 +120,8 @@ def _call_gemini(system, user, max_tokens):
             ),
         )
         return response.text
-    except Exception:  # noqa: BLE001 - 네트워크/키 오류 등 무엇이든 AI 비활성화로 취급
+    except Exception as exc:  # noqa: BLE001 - 네트워크/키 오류 등 무엇이든 AI 비활성화로 취급
+        print(f"[ai] Gemini 호출 실패: {exc!r}")
         return None
 
 
